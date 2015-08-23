@@ -1,0 +1,156 @@
+---
+title: "pml"
+author: "Alejandro"
+date: "23 de agosto de 2015"
+output: html_document
+---
+
+
+
+I started getting the data and making some data partition.
+I used 80% of ther data to train the model
+
+```{r cache=TRUE}
+setwd("D:/data/Desktop/PracticalMachineLearning/pml")
+set.seed(178632)
+training <- read.csv("pml-training.csv")
+
+
+test <- read.csv("pml-testing.csv")
+library(caret)
+
+inTrain<-createDataPartition(y=training$classe,p=.80,list = FALSE)
+
+summary(inTrain)
+trainingSample<-training[inTrain,]
+testingSample<-training[-inTrain,]
+summary(trainingSample)
+
+```
+After this rpocess was made I remove the low variance variables
+The columns were removed from training and testing datasets
+```{r cache=TRUE}
+nzv <- nearZeroVar(trainingSample, saveMetrics= TRUE)
+length(nzv[which(nzv$nzv==TRUE),1])
+
+nzv <- nearZeroVar(trainingSample)
+#data without zero vars
+trainingSampleCLean <- trainingSample[, -nzv]
+
+#Appling to testing
+testingSample <- testingSample[, -nzv]
+```
+
+Adicionaly I remove the first 6 columns which does not get any value to the model
+
+```{r cache=TRUE}
+
+trainingSampleCLean<-trainingSampleCLean[,-(1:6)]
+
+#Appling to testing
+testingSample <- testingSample[, -(1:6)]
+
+```
+In the trainig dataset summary I realized that there are many variables with NAs, these variables have to be remove in order to get better results
+
+```{r cache=TRUE}
+selcols = grep("^max_|^min_|^amplitude_|^var_|^avg_|^stddev_", names(trainingSampleCLean)) 
+summary(trainingSampleCLean[,-selcols] )
+
+trainingSampleCLean<-trainingSampleCLean[,-selcols] 
+#Appling to testing
+testingSample <- testingSample[, -selcols]
+
+```
+Now I  have a better dataset, but it's necessary to clean the data a little bit more and remove columns that are higtly correlated
+
+```{r cache=TRUE}
+
+descrCor <-  cor(trainingSampleCLean[,1:length(trainingSampleCLean)-1])
+
+highlyCorDescr <- findCorrelation(descrCor, cutoff = .75)
+
+trainingSampleCLean <- trainingSampleCLean[,-highlyCorDescr]
+
+#Appling to testing
+testingSample <- testingSample[, -highlyCorDescr]
+
+```
+Now we have a dataset with varibles correlated no mare than 0.75
+
+```{r cache=TRUE}
+descrCor2 <- cor(trainingSampleCLean[,1:length(trainingSampleCLean)-1])
+summary(descrCor2[upper.tri(descrCor2)])
+
+```
+Now I start with the model fitting
+First I set the parameters for the training, after that I train two models and rpart model and the random forest.
+
+```{r cache=TRUE}
+set.seed(1745)
+folds=10
+repeats=10
+fitControl <- trainControl(method="cv",number=folds,repeats=repeats,
+                           classProbs=T,
+                           allowParallel=T
+                           )
+
+modfit1 <- train(classe~., data=trainingSampleCLean,
+                     method="rpart",metric="ROC",
+                     trControl=fitControl
+                     )
+
+
+
+
+
+
+predictedTrain1<-predict(modfit1,newdata = trainingSampleCLean)
+
+predictedTest1<-predict(modfit1,newdata = testingSample)
+
+
+
+
+
+confusionMatrix(predictedTrain1,trainingSampleCLean$classe)
+confusionMatrix(predictedTest1,testingSample$classe)
+
+
+
+```
+```{r cache=TRUE}
+modfit2<-train(classe~.,method="rf", trControl=trainControl(method='cv'), number=5, allowParallel=TRUE ,data=trainingSampleCLean)
+predictedTrain2<-predict(modfit2,newdata = trainingSampleCLean)
+
+predictedTest2<-predict(modfit2,newdata = testingSample)
+confusionMatrix(predictedTrain2,trainingSampleCLean$classe)
+confusionMatrix(predictedTest2,testingSample$classe)
+
+
+```
+
+
+
+Applying the model to the test set
+
+
+```{r cache=TRUE,eval=FALSE}
+test <- test[, -nzv]
+test <- test[, -(1:6)]
+test <- test[, -selcols]
+test <- test[, -highlyCorDescr]
+answers<-predict(modfit2,newdata = test)
+
+setwd("D:/data/Desktop/PracticalMachineLearning/pml/resultR")
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(answers)
+
+```
